@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <netinet/ether.h>
+#include <net/if.h>
 
 
 typedef struct{
@@ -24,54 +26,42 @@ void getMACaddr(unsigned char *packet, int s){
     struct ether_header eth;
     int curlen = 0;
 
-    eth->ether_dhost[0] = 0xff;
-    eth->ether_dhost[1] = 0xff;
-    eth->ether_dhost[2] = 0xff;
-    eth->ether_dhost[3] = 0xff;
-    eth->ether_dhost[4] = 0xff;
-    eth->ether_dhost[5] = 0xff;
+    eth.ether_dhost[0] = 0xff;
+    eth.ether_dhost[1] = 0xff;
+    eth.ether_dhost[2] = 0xff;
+    eth.ether_dhost[3] = 0xff;
+    eth.ether_dhost[4] = 0xff;
+    eth.ether_dhost[5] = 0xff;
 
 }
 
 int main(int argc, char **argv){
 
-        char errbuf[PCAP_ERRBUF_SIZE];
-        unsigned char packet[1500];
+        int sock;
+        struct ifreq ifr;
+        unsigned char *mac = NULL;
 
-        pcap_if_t *alldevs;
-        pcap_if_t *d;
-        pcap_t *adhandle;
-
-        // struct pcap_pkthdr *header;
-        // const unsigned char *pkt_data;
+        memset(&ifr, 0x00, sizeof(ifr));
+        strcpy(ifr.ifr_name, argv[1]);
 
         if(argc != 4){
-            printf("Usage : AS3 <interface> <sender ip> <target ip>");
+            printf("Usage : AS3 <interface> <sender ip> <target ip>\n");
             exit(1);
         }
 
-        if(pcap_findalldevs(&alldevs, errbuf) == -1){
-                fprintf(stderr, "Error in pcap_findalldevs : %s\n", errbuf);
-                exit(1);
+        int fd=socket(AF_UNIX, SOCK_DGRAM, 0);
+        if((sock=socket(AF_UNIX, SOCK_DGRAM, 0))<0){
+            perror("socket ");
+            return 1;
         }
 
-        for (d = alldevs; d; d = d->next){
-            if(strcmp(d->name, argv[1])){
-                printf("Target : %s ", argv[1]);
-                printf(" (%s)\n", d->description);
-                break;
-            }
+        if(ioctl(fd,SIOCGIFHWADDR,&ifr)<0){
+            perror("ioctl ");
+            return 1;
         }
 
-        if((adhandle = pcap_open_live(d->name, 65536, 1, 0, errbuf)) == NULL){
-            printf("[!] Packet descriptor Error!!!\n");
-            perror(errbuf);
-            printf("[!] EXIT process\n");
-            pcap_freealldevs(alldevs);
-            exit(0);
-        }
-
-        printf("\nListening on %s...\n", d->name);
+        mac = ifr.ifr_hwaddr.sa_data;
+        printf("%s: %02x:%02x:%02x:%02x:%02x:%02x\n", ifr.ifr_name, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
 
     return 0;
 }
