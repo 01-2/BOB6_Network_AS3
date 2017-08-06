@@ -40,7 +40,6 @@ int sendArpReq(pcap_t *fp, char* interface, char* target){
     u_char *mymac;
 
     struct ifreq ifr;
-    struct in_addr srcip;
     struct in_addr targetip;
     struct ether_header eh;
     struct arp_header ah;
@@ -104,9 +103,8 @@ int sendArpReq(pcap_t *fp, char* interface, char* target){
 
     if(pcap_sendpacket(fp, tmp, 42)!=0){
         fprintf(stderr, "sendpacket_error\n");
-        return -1;
+        return 1;
     }
-
     return 0;
 }
 
@@ -145,8 +143,7 @@ int sendArpRepl(pcap_t *fp, char* interface, char* sMAC, char* dMAC, char* sourc
     ah.ar_pln = 4;                  // Protocol size : 4
     ah.ar_op = htons(0x0002);       // Opcode(Repl)  : 2
 
-
-    ah.ar_spa = aptr->sin_addr.s_addr;
+    // ah.ar_spa = aptr->sin_addr.s_addr;
 
     inet_aton(source, &srcip.s_addr);
     ah.ar_spa = srcip.s_addr;
@@ -168,21 +165,32 @@ int sendArpRepl(pcap_t *fp, char* interface, char* sMAC, char* dMAC, char* sourc
         fprintf(stderr, "sendpacket_error\n");
         return -1;
     }
-
     return 0;
 }
 
 
 int main(int argc, char *argv[]){
 
+        int i = 0;
+        int res;
+        int offset = 14;
+        char* address;
         char errbuf[PCAP_ERRBUF_SIZE];
-        struct ether_header *tMAC;
+        const unsigned char *pkt_data;
+
+        struct pcap_pkthdr *header;
+        struct ether_header *eth;
+        struct arp_header *arp;
+
         pcap_t *fp;
+        u_char *tmp;
+        u_int8_t sMAC[6];
 
         if(argc != 4){
             printf("Usage : AS3 <interface> <sender ip> <target ip>\n");
             exit(1);
         }
+
 
         if((fp = pcap_open_live(argv[1], 65536, 1, 0, errbuf)) == NULL){
                 printf("[!] Packet descriptor Error!!!\n");
@@ -191,7 +199,34 @@ int main(int argc, char *argv[]){
                 exit(0);
         }
 
-        // int sendArpReq(pcap_t *fp, char* interface, char* dMAC, char* target)
+        sendArpReq(fp, argv[1], argv[2]);
+
+        while(1){
+            res = pcap_next_ex(fp, &header, &pkt_data);
+            if (res == 0 || pkt_data == NULL){
+                if (sendArpReq(fp, argv[1], argv[2]) != 0){
+                    fprintf(stderr,"\nError sending the packet: %s\n", pcap_geterr(fp));
+                    return -1;
+                }
+                sleep(1);
+                continue;
+            }
+            if (res == -1 || res == -2){
+                printf("[!] EXIT process\n");
+                break;
+            }
+
+            eth = pkt_data;
+            arp = pkt_data+offset;
+
+            if((ntohs(eth->ether_type) == 0x0806) && (ntohs(arp->ar_op) == 0x0002)){
+                for(i = 0; i < 6; i++) sMAC[i] = eth->ether_shost[i];
+                printf("Get SMAC\n");
+                printf("Sender MAC : %02x:%02x:%02x:%02x:%02x:%02x\n", sMAC[0], sMAC[1], sMAC[2], sMAC[3], sMAC[4],sMAC[5]);
+                break;
+            }
+        }
 
         return 0;
 }
+
